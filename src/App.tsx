@@ -8,7 +8,10 @@ export default function RGBNoiseMixer() {
   const [isOrganic, setIsOrganic] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(10);
-  
+
+  const redRef = useRef(red);
+  const greenRef = useRef(green);
+  const blueRef = useRef(blue);
   const audioContextRef = useRef(null);
   const noiseNodeRef = useRef(null);
   const gainNodeRef = useRef(null);
@@ -72,7 +75,7 @@ export default function RGBNoiseMixer() {
     scriptNode.onaudioprocess = (e) => {
       const outputL = e.outputBuffer.getChannelData(0);
       const outputR = e.outputBuffer.getChannelData(1);
-      
+       
       const bassGain = red / 255;
       const midGain = green / 255;
       const trebleGain = blue / 255;
@@ -355,7 +358,11 @@ export default function RGBNoiseMixer() {
               min="0"
               max="255"
               value={red}
-              onChange={(e) => setRed(parseInt(e.target.value))}
+              onChange={(e) => {
+                const val = parseInt(e.target.value);
+                setRed(val);
+                redRef.current = val; // <-- update ref
+              }}
               className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-red-500"
             />
           </div>
@@ -370,7 +377,12 @@ export default function RGBNoiseMixer() {
               min="0"
               max="255"
               value={green}
-              onChange={(e) => setGreen(parseInt(e.target.value))}
+              onChange={(e) => 
+                { 
+                  const val = parseInt(e.target.value)
+                  setGreen(val);
+                  greenRef.current = val;
+                }}
               className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500"
             />
           </div>
@@ -385,7 +397,11 @@ export default function RGBNoiseMixer() {
               min="0"
               max="255"
               value={blue}
-              onChange={(e) => setBlue(parseInt(e.target.value))}
+              onChange={(e) => { 
+                  const val = parseInt(e.target.value)
+                  setBlue(val);
+                  blueRef.current = val;
+                }}
               className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
             />
           </div>
