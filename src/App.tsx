@@ -99,39 +99,42 @@ export default function RGBNoiseMixer() {
           outputR[i] = sample;
         }
       } else {
-        // ORGANIC MODE - Multi-layered
         const state = organicStateRef.current;
         
         for (let i = 0; i < bufferSize; i++) {
-          // Generate 3 layers of brown noise
+          // Generate brown noise layers
           const brown1 = generateBrownNoiseSample(state.brownStates[0]);
           state.brownStates[0] = brown1 / 3.5;
           const brown2 = generateBrownNoiseSample(state.brownStates[1]);
           state.brownStates[1] = brown2 / 3.5;
           const brown3 = generateBrownNoiseSample(state.brownStates[2]);
           state.brownStates[2] = brown3 / 3.5;
-          
           const brown = (brown1 * 0.4 + brown2 * 0.35 + brown3 * 0.25) * bassGain;
-          
-          // Generate 2 layers of pink noise
+      
+          // Pink noise layers
           const pink1 = generatePinkNoiseSample(state.pinkStates[0]);
           const pink2 = generatePinkNoiseSample(state.pinkStates[1]);
           const pink = (pink1 * 0.6 + pink2 * 0.4) * midGain;
-          
+      
           // White noise
           const white = (Math.random() * 2 - 1) * trebleGain;
-          
+      
           // LFO for organic movement
           state.lfoPhase += 0.00005;
           const lfo = Math.sin(2 * Math.PI * state.lfoPhase) * 0.15 + 1;
-          
+      
           const sample = (brown * 0.4 + pink * 0.5 + white * 0.3) * 0.5 * lfo;
-          
-          // Simple smoothing
-          const prevL = i > 0 ? outputL[i - 1] : 0;
-          const prevR = i > 0 ? outputR[i - 1] : 0;
-          outputL[i] = sample * 0.8 + prevL * 0.2;
-          outputR[i] = sample * 0.8 + prevR * 0.2;
+      
+          // Simple stereo panning: slow sinusoidal left/right
+          const pan = Math.sin(2 * Math.PI * state.lfoPhase * 0.5) * 0.5 + 0.5; // 0 = left, 1 = right
+          outputL[i] = sample * (1 - pan);
+          outputR[i] = sample * pan;
+      
+          // Smoothing for organic feel
+          if (i > 0) {
+            outputL[i] = outputL[i] * 0.8 + outputL[i - 1] * 0.2;
+            outputR[i] = outputR[i] * 0.8 + outputR[i - 1] * 0.2;
+          }
         }
       }
     };
