@@ -1,16 +1,27 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Volume2, Download, RotateCcw } from 'lucide-react';
+import { Volume2, VolumeX, Download, Play, Pause } from 'lucide-react';
 
-export default function App() {
+export default function RGBNoiseMixer() {
   const [red, setRed] = useState(255);
   const [green, setGreen] = useState(255);
   const [blue, setBlue] = useState(255);
-  const [duration, setDuration] = useState(10);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [isOrganic, setIsOrganic] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [duration, setDuration] = useState(10);
+  
   const audioContextRef = useRef(null);
-  const audioBufferRef = useRef(null);
-  const sourceNodeRef = useRef(null);
+  const noiseNodeRef = useRef(null);
+  const gainNodeRef = useRef(null);
+  
+  // Noise generation state for organic mode
+  const organicStateRef = useRef({
+    brownStates: [0, 0, 0],
+    pinkStates: [
+      { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 },
+      { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 }
+    ],
+    lfoPhase: 0
+  });
 
   const rgbToHex = (r, g, b) => {
     return '#' + [r, g, b].map(x => {
@@ -32,107 +43,206 @@ export default function App() {
     return "Custom Noise";
   };
 
-  const generateCustomNoise = (length, bassGain, midGain, trebleGain) => {
-    const buffer = new Float32Array(length);
-    
-    // Generate brown noise (Brownian motion for bass)
-    const brownNoise = new Float32Array(length);
-    let lastOut = 0.0;
-    for (let i = 0; i < length; i++) {
-      const white = Math.random() * 2 - 1;
-      brownNoise[i] = (lastOut + (0.02 * white)) / 1.02;
-      lastOut = brownNoise[i];
-      brownNoise[i] *= 3.5;
-    }
-    
-    // Generate pink noise (for mids)
-    const pinkNoise = new Float32Array(length);
-    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-    for (let i = 0; i < length; i++) {
-      const white = Math.random() * 2 - 1;
-      b0 = 0.99886 * b0 + white * 0.0555179;
-      b1 = 0.99332 * b1 + white * 0.0750759;
-      b2 = 0.96900 * b2 + white * 0.1538520;
-      b3 = 0.86650 * b3 + white * 0.3104856;
-      b4 = 0.55000 * b4 + white * 0.5329522;
-      b5 = -0.7616 * b5 - white * 0.0168980;
-      pinkNoise[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
-      b6 = white * 0.115926;
-    }
-    
-    // Generate white noise (for treble)
-    const whiteNoise = new Float32Array(length);
-    for (let i = 0; i < length; i++) {
-      whiteNoise[i] = Math.random() * 2 - 1;
-    }
-    
-    // Mix the three noise types based on RGB values
-    for (let i = 0; i < length; i++) {
-      buffer[i] = (
-        brownNoise[i] * bassGain * 0.4 +
-        pinkNoise[i] * midGain * 0.5 +
-        whiteNoise[i] * trebleGain * 0.3
-      ) * 0.5;
-    }
-    
-    return buffer;
+  const generateBrownNoiseSample = (state) => {
+    const white = Math.random() * 2 - 1;
+    const output = (state + (0.02 * white)) / 1.02;
+    return output * 3.5;
   };
 
-  const handleGenerate = () => {
-    setIsGenerating(true);
+  const generatePinkNoiseSample = (state) => {
+    const white = Math.random() * 2 - 1;
+    state.b0 = 0.99886 * state.b0 + white * 0.0555179;
+    state.b1 = 0.99332 * state.b1 + white * 0.0750759;
+    state.b2 = 0.96900 * state.b2 + white * 0.1538520;
+    state.b3 = 0.86650 * state.b3 + white * 0.3104856;
+    state.b4 = 0.55000 * state.b4 + white * 0.5329522;
+    state.b5 = -0.7616 * state.b5 - white * 0.0168980;
+    const output = (state.b0 + state.b1 + state.b2 + state.b3 + state.b4 + state.b5 + state.b6 + white * 0.5362) * 0.11;
+    state.b6 = white * 0.115926;
+    return output;
+  };
+
+  const startRealTimeNoise = () => {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    audioContextRef.current = audioContext;
+
+    const bufferSize = 4096;
+    const scriptNode = audioContext.createScriptProcessor(bufferSize, 0, 2);
     
-    setTimeout(() => {
-      const sampleRate = 44100;
-      const length = sampleRate * duration;
+    scriptNode.onaudioprocess = (e) => {
+      const outputL = e.outputBuffer.getChannelData(0);
+      const outputR = e.outputBuffer.getChannelData(1);
       
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      audioContextRef.current = audioContext;
-      
-      // Map RGB to frequency gains
       const bassGain = red / 255;
       const midGain = green / 255;
       const trebleGain = blue / 255;
       
-      const audioBuffer = audioContext.createBuffer(2, length, sampleRate);
-      const leftChannel = generateCustomNoise(length, bassGain, midGain, trebleGain);
-      const rightChannel = generateCustomNoise(length, bassGain, midGain, trebleGain);
-      
-      audioBuffer.getChannelData(0).set(leftChannel);
-      audioBuffer.getChannelData(1).set(rightChannel);
-      
-      audioBufferRef.current = audioBuffer;
-      setIsGenerating(false);
-    }, 100);
-  };
+      if (!isOrganic) {
+        // PURE MODE - Simple generation
+        let brownState = 0;
+        let pinkState = { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 };
+        
+        for (let i = 0; i < bufferSize; i++) {
+          // Brown noise
+          const white1 = Math.random() * 2 - 1;
+          brownState = (brownState + (0.02 * white1)) / 1.02;
+          const brown = brownState * 3.5;
+          
+          // Pink noise
+          const pink = generatePinkNoiseSample(pinkState);
+          
+          // White noise
+          const white = Math.random() * 2 - 1;
+          
+          const sample = (brown * bassGain * 0.4 + pink * midGain * 0.5 + white * trebleGain * 0.3) * 0.5;
+          outputL[i] = sample;
+          outputR[i] = sample;
+        }
+      } else {
+        // ORGANIC MODE - Multi-layered
+        const state = organicStateRef.current;
+        
+        for (let i = 0; i < bufferSize; i++) {
+          // Generate 3 layers of brown noise
+          const brown1 = generateBrownNoiseSample(state.brownStates[0]);
+          state.brownStates[0] = brown1 / 3.5;
+          const brown2 = generateBrownNoiseSample(state.brownStates[1]);
+          state.brownStates[1] = brown2 / 3.5;
+          const brown3 = generateBrownNoiseSample(state.brownStates[2]);
+          state.brownStates[2] = brown3 / 3.5;
+          
+          const brown = (brown1 * 0.4 + brown2 * 0.35 + brown3 * 0.25) * bassGain;
+          
+          // Generate 2 layers of pink noise
+          const pink1 = generatePinkNoiseSample(state.pinkStates[0]);
+          const pink2 = generatePinkNoiseSample(state.pinkStates[1]);
+          const pink = (pink1 * 0.6 + pink2 * 0.4) * midGain;
+          
+          // White noise
+          const white = (Math.random() * 2 - 1) * trebleGain;
+          
+          // LFO for organic movement
+          state.lfoPhase += 0.00005;
+          const lfo = Math.sin(2 * Math.PI * state.lfoPhase) * 0.15 + 1;
+          
+          const sample = (brown * 0.4 + pink * 0.5 + white * 0.3) * 0.5 * lfo;
+          
+          // Simple smoothing
+          const prevL = i > 0 ? outputL[i - 1] : 0;
+          const prevR = i > 0 ? outputR[i - 1] : 0;
+          outputL[i] = sample * 0.8 + prevL * 0.2;
+          outputR[i] = sample * 0.8 + prevR * 0.2;
+        }
+      }
+    };
 
-  const handlePlay = () => {
-    if (!audioBufferRef.current || !audioContextRef.current) return;
+    const gainNode = audioContext.createGain();
+    gainNode.gain.value = 0.5;
+    gainNodeRef.current = gainNode;
+
+    scriptNode.connect(gainNode);
+    gainNode.connect(audioContext.destination);
     
-    // Stop existing playback
-    if (sourceNodeRef.current) {
-      sourceNodeRef.current.stop();
-    }
-    
-    const source = audioContextRef.current.createBufferSource();
-    source.buffer = audioBufferRef.current;
-    source.connect(audioContextRef.current.destination);
-    source.onended = () => setIsPlaying(false);
-    source.start(0);
-    sourceNodeRef.current = source;
+    noiseNodeRef.current = scriptNode;
     setIsPlaying(true);
   };
 
-  const handleStop = () => {
-    if (sourceNodeRef.current) {
-      sourceNodeRef.current.stop();
-      setIsPlaying(false);
+  const stopRealTimeNoise = () => {
+    if (noiseNodeRef.current) {
+      noiseNodeRef.current.disconnect();
+      noiseNodeRef.current = null;
+    }
+    if (gainNodeRef.current) {
+      gainNodeRef.current.disconnect();
+      gainNodeRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    setIsPlaying(false);
+  };
+
+  const togglePlayback = () => {
+    if (isPlaying) {
+      stopRealTimeNoise();
+    } else {
+      startRealTimeNoise();
     }
   };
 
-  const handleDownload = () => {
-    if (!audioBufferRef.current) return;
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopRealTimeNoise();
+    };
+  }, []);
+
+  const generateRecording = () => {
+    const sampleRate = 44100;
+    const length = sampleRate * duration;
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const audioBuffer = audioContext.createBuffer(2, length, sampleRate);
     
-    const audioBuffer = audioBufferRef.current;
+    const bassGain = red / 255;
+    const midGain = green / 255;
+    const trebleGain = blue / 255;
+    
+    const leftChannel = audioBuffer.getChannelData(0);
+    const rightChannel = audioBuffer.getChannelData(1);
+    
+    if (!isOrganic) {
+      let brownState = 0;
+      let pinkState = { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 };
+      
+      for (let i = 0; i < length; i++) {
+        const white1 = Math.random() * 2 - 1;
+        brownState = (brownState + (0.02 * white1)) / 1.02;
+        const brown = brownState * 3.5;
+        
+        const pink = generatePinkNoiseSample(pinkState);
+        const white = Math.random() * 2 - 1;
+        
+        const sample = (brown * bassGain * 0.4 + pink * midGain * 0.5 + white * trebleGain * 0.3) * 0.5;
+        leftChannel[i] = sample;
+        rightChannel[i] = sample;
+      }
+    } else {
+      const brownStates = [0, 0, 0];
+      const pinkStates = [
+        { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 },
+        { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 }
+      ];
+      
+      for (let i = 0; i < length; i++) {
+        const brown1 = generateBrownNoiseSample(brownStates[0]);
+        brownStates[0] = brown1 / 3.5;
+        const brown2 = generateBrownNoiseSample(brownStates[1]);
+        brownStates[1] = brown2 / 3.5;
+        const brown3 = generateBrownNoiseSample(brownStates[2]);
+        brownStates[2] = brown3 / 3.5;
+        
+        const brown = (brown1 * 0.4 + brown2 * 0.35 + brown3 * 0.25) * bassGain;
+        
+        const pink1 = generatePinkNoiseSample(pinkStates[0]);
+        const pink2 = generatePinkNoiseSample(pinkStates[1]);
+        const pink = (pink1 * 0.6 + pink2 * 0.4) * midGain;
+        
+        const white = (Math.random() * 2 - 1) * trebleGain;
+        
+        const lfo = Math.sin(2 * Math.PI * 2.5 * i / length) * 0.15 + 1;
+        const sample = (brown * 0.4 + pink * 0.5 + white * 0.3) * 0.5 * lfo;
+        
+        leftChannel[i] = sample;
+        rightChannel[i] = sample;
+      }
+    }
+    
+    return audioBuffer;
+  };
+
+  const handleDownload = () => {
+    const audioBuffer = generateRecording();
     const channels = [audioBuffer.getChannelData(0), audioBuffer.getChannelData(1)];
     const length = audioBuffer.length * channels.length * 2;
     const buffer = new ArrayBuffer(44 + length);
@@ -171,7 +281,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `custom-noise-rgb(${red},${green},${blue}).wav`;
+    a.download = `custom-noise-rgb(${red},${green},${blue})-${isOrganic ? 'organic' : 'pure'}.wav`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -186,7 +296,7 @@ export default function App() {
     <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 p-8 flex items-center justify-center">
       <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-2xl w-full border border-gray-700">
         <h1 className="text-3xl font-bold text-white mb-2">RGB Noise Frequency Mixer</h1>
-        <p className="text-gray-400 mb-6">Paint your noise with color • Generate custom frequencies</p>
+        <p className="text-gray-400 mb-6">Real-time noise synthesis • Adjust while playing</p>
         
         {/* Color Display */}
         <div className="mb-6 relative">
@@ -201,6 +311,34 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        {/* Play/Stop Button */}
+        <button
+          onClick={togglePlayback}
+          className={`w-full ${
+            isPlaying ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
+          } text-white font-semibold py-4 px-6 rounded-lg transition-colors mb-6 flex items-center justify-center gap-3 text-lg`}
+        >
+          {isPlaying ? (
+            <>
+              <VolumeX size={24} />
+              Stop Real-Time Playback
+            </>
+          ) : (
+            <>
+              <Volume2 size={24} />
+              Start Real-Time Playback
+            </>
+          )}
+        </button>
+
+        {isPlaying && (
+          <div className="mb-6 p-3 bg-green-900 bg-opacity-30 border border-green-600 rounded-lg">
+            <p className="text-green-400 text-sm text-center font-medium">
+              🎵 Live! Adjust sliders to hear changes in real-time
+            </p>
+          </div>
+        )}
 
         {/* RGB Sliders */}
         <div className="space-y-4 mb-6">
@@ -281,10 +419,38 @@ export default function App() {
           </div>
         </div>
 
-        {/* Duration */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-400 mb-2">
-            Duration: {duration} seconds
+        {/* Organic/Pure Toggle */}
+        <div className="mb-6 p-4 bg-gray-900 rounded-lg border border-gray-700">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <label className="text-sm font-medium text-white">
+                {isOrganic ? '🌿 Organic Mode' : '🔬 Pure Mode'}
+              </label>
+              <p className="text-xs text-gray-400 mt-1">
+                {isOrganic 
+                  ? 'Multi-layered with subtle movement and spatial depth' 
+                  : 'Raw mathematical algorithms, perfectly static'}
+              </p>
+            </div>
+            <button
+              onClick={() => setIsOrganic(!isOrganic)}
+              className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                isOrganic ? 'bg-green-600' : 'bg-gray-600'
+              }`}
+            >
+              <span
+                className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                  isOrganic ? 'translate-x-7' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {/* Download Section */}
+        <div className="border-t border-gray-700 pt-6">
+          <label className="block text-sm font-medium text-gray-400 mb-3">
+            Download Recording ({duration}s)
           </label>
           <input
             type="range"
@@ -292,44 +458,21 @@ export default function App() {
             max="30"
             value={duration}
             onChange={(e) => setDuration(parseInt(e.target.value))}
-            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500 mb-4"
           />
+          <button
+            onClick={handleDownload}
+            className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
+          >
+            <Download size={20} />
+            Download WAV File
+          </button>
         </div>
-
-        {/* Generate Button */}
-        <button
-          onClick={handleGenerate}
-          disabled={isGenerating}
-          className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors mb-4"
-        >
-          {isGenerating ? 'Generating...' : 'Generate Custom Noise'}
-        </button>
-
-        {/* Playback Controls */}
-        {audioBufferRef.current && (
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={isPlaying ? handleStop : handlePlay}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
-            >
-              <Volume2 size={20} />
-              {isPlaying ? 'Stop' : 'Play'}
-            </button>
-            
-            <button
-              onClick={handleDownload}
-              className="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
-            >
-              <Download size={20} />
-              Download
-            </button>
-          </div>
-        )}
 
         {/* Info */}
         <div className="mt-6 p-4 bg-gray-900 rounded-lg border border-gray-700">
           <p className="text-sm text-gray-300 mb-2">
-            <strong className="text-white">How it works:</strong> Just like RGB creates colors, this mixes frequencies to create noise.
+            <strong className="text-white">Real-time synthesis:</strong> Hit play and adjust the RGB sliders to hear instant changes!
           </p>
           <ul className="text-xs text-gray-400 space-y-1">
             <li><span className="text-red-400">Red</span> = Bass frequencies (deep rumble)</li>
