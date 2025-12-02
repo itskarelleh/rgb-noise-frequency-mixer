@@ -76,10 +76,10 @@ export default function RGBNoiseMixer() {
       const outputL = e.outputBuffer.getChannelData(0);
       const outputR = e.outputBuffer.getChannelData(1);
        
-      const bassGain = red / 255;
-      const midGain = green / 255;
-      const trebleGain = blue / 255;
-      
+      const bassGain = redRef.current / 255;
+      const midGain = greenRef.current / 255;
+      const trebleGain = blueRef.current / 255;
+            
       if (!isOrganic) {
         // PURE MODE - Simple generation
         let brownState = 0;
