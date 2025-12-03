@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Volume2, VolumeX, Download, Play, Pause } from 'lucide-react';
+import { Volume2, VolumeX, Download } from 'lucide-react';
 
 export default function RGBNoiseMixer() {
+  // --- Core states (visible UI) ---
   const [red, setRed] = useState(255);
   const [green, setGreen] = useState(255);
   const [blue, setBlue] = useState(255);
@@ -9,25 +10,41 @@ export default function RGBNoiseMixer() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(10);
 
+  // --- Organic control states (visible UI) ---
+  const [lfoRate, setLfoRate] = useState(1 / 8); // Hz (default 0.125)
+  const [lfoDepth, setLfoDepth] = useState(0.9); // 0..1 pan depth
+  const [lfoShape, setLfoShape] = useState('sine'); // 'sine' | 'triangle' | 'smoothstep' | 'noiseBlend'
+  const [randomness, setRandomness] = useState(0.03); // 0..0.2
+  const [phaseOffset, setPhaseOffset] = useState(0); // 0..1 (0..360deg)
+
+  // --- Refs for live audio access (so changes apply instantly) ---
   const redRef = useRef(red);
   const greenRef = useRef(green);
   const blueRef = useRef(blue);
   const isOrganicRef = useRef(isOrganic);
 
+  const lfoRateRef = useRef(lfoRate);
+  const lfoDepthRef = useRef(lfoDepth);
+  const lfoShapeRef = useRef(lfoShape);
+  const randomnessRef = useRef(randomness);
+  const phaseOffsetRef = useRef(phaseOffset);
+
+  // audio nodes & state
   const audioContextRef = useRef(null);
   const noiseNodeRef = useRef(null);
   const gainNodeRef = useRef(null);
-  
-  // Noise generation state for organic mode
+
+  // organic internal generator state
   const organicStateRef = useRef({
     brownStates: [0, 0, 0],
     pinkStates: [
       { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 },
       { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 }
     ],
-    lfoPhase: 0
+    lfoPhase: 0 // radians
   });
 
+  // --- Helpers ---
   const rgbToHex = (r, g, b) => {
     return '#' + [r, g, b].map(x => {
       const hex = x.toString(16);
@@ -48,12 +65,14 @@ export default function RGBNoiseMixer() {
     return "Custom Noise";
   };
 
-  const generateBrownNoiseSample = (state) => {
+  // Brown noise helper
+  const generateBrownNoiseSample = (stateVal) => {
     const white = Math.random() * 2 - 1;
-    const output = (state + (0.02 * white)) / 1.02;
+    const output = (stateVal + (0.02 * white)) / 1.02;
     return output * 3.5;
   };
 
+  // Pink noise helper (7-coef method)
   const generatePinkNoiseSample = (state) => {
     const white = Math.random() * 2 - 1;
     state.b0 = 0.99886 * state.b0 + white * 0.0555179;
@@ -67,47 +86,83 @@ export default function RGBNoiseMixer() {
     return output;
   };
 
+  // LFO shape helpers: input x in [-1,1] → shaped value in [-1,1]
+  const shapeLFO = (raw, shape) => {
+    if (shape === 'sine') return raw; // already [-1..1]
+    if (shape === 'triangle') return 2 * Math.asin(Math.sin(raw)) / Math.PI; // approximate triangle
+    if (shape === 'smoothstep') {
+      // convert [-1..1] -> [0..1], smoothstep, back to [-1..1]
+      const t = (raw + 1) * 0.5;
+      const s = t * t * (3 - 2 * t);
+      return s * 2 - 1;
+    }
+    if (shape === 'noiseBlend') {
+      // base sine blended with high-rate micro-noise
+      const noise = (Math.random() * 2 - 1) * 0.2;
+      return raw * 0.85 + noise * 0.15;
+    }
+    return raw;
+  };
+
+  // --- Real-time playback (start/stop) ---
   const startRealTimeNoise = () => {
+    if (audioContextRef.current) return; // already running
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
     audioContextRef.current = audioContext;
 
     const bufferSize = 4096;
     const scriptNode = audioContext.createScriptProcessor(bufferSize, 0, 2);
-    
+
+    // ensure lfoPhase initialized from phaseOffset (phaseOffset is 0..1)
+    organicStateRef.current.lfoPhase = phaseOffsetRef.current * Math.PI * 2;
+
     scriptNode.onaudioprocess = (e) => {
       const outputL = e.outputBuffer.getChannelData(0);
       const outputR = e.outputBuffer.getChannelData(1);
-       
+
+      const sampleRate = audioContext.sampleRate;
+
+      // read live gains from refs
       const bassGain = redRef.current / 255;
       const midGain = greenRef.current / 255;
       const trebleGain = blueRef.current / 255;
-            
+
+      // copy local refs for organic settings (these can be adjusted live)
+      const localLfoRate = lfoRateRef.current;      // Hz
+      const localLfoDepth = lfoDepthRef.current;    // 0..1
+      const localLfoShape = lfoShapeRef.current;
+      const localRand = randomnessRef.current;      // 0..0.2
+      const localPhaseOffset = phaseOffsetRef.current;
+
       if (!isOrganicRef.current) {
-        // PURE MODE - Simple generation
+        // PURE MODE: simple per-buffer generator (deterministic-ish)
         let brownState = 0;
         let pinkState = { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 };
-        
+
         for (let i = 0; i < bufferSize; i++) {
-          // Brown noise
           const white1 = Math.random() * 2 - 1;
           brownState = (brownState + (0.02 * white1)) / 1.02;
           const brown = brownState * 3.5;
-          
-          // Pink noise
+
           const pink = generatePinkNoiseSample(pinkState);
-          
-          // White noise
           const white = Math.random() * 2 - 1;
-          
+
           const sample = (brown * bassGain * 0.4 + pink * midGain * 0.5 + white * trebleGain * 0.3) * 0.5;
+
+          // simple static center pan in pure mode
           outputL[i] = sample;
           outputR[i] = sample;
         }
       } else {
+        // ORGANIC MODE
         const state = organicStateRef.current;
-        
+
+        // We'll update phase increment per-sample for sample-accurate LFO:
+        // phase increment = 2*pi*freq / sampleRate
+        const phaseInc = (2 * Math.PI * localLfoRate) / sampleRate;
+
         for (let i = 0; i < bufferSize; i++) {
-          // Generate brown noise layers
+          // brown layers
           const brown1 = generateBrownNoiseSample(state.brownStates[0]);
           state.brownStates[0] = brown1 / 3.5;
           const brown2 = generateBrownNoiseSample(state.brownStates[1]);
@@ -115,32 +170,49 @@ export default function RGBNoiseMixer() {
           const brown3 = generateBrownNoiseSample(state.brownStates[2]);
           state.brownStates[2] = brown3 / 3.5;
           const brown = (brown1 * 0.4 + brown2 * 0.35 + brown3 * 0.25) * bassGain;
-      
-          // Pink noise layers
+
+          // pink layers
           const pink1 = generatePinkNoiseSample(state.pinkStates[0]);
           const pink2 = generatePinkNoiseSample(state.pinkStates[1]);
           const pink = (pink1 * 0.6 + pink2 * 0.4) * midGain;
-      
-          // White noise
-          const white = (Math.random() * 2 - 1) * trebleGain;
-      
-          // LFO for organic movement
-          const lfoFrequency = 1 / 8; // 0.125hz (8-second cycle)
-          state.lfoPhase += (2 * Math.PI * lfoFrequency) / audioContextRef.current.sampleRate;
-          const lfo = Math.sin(state.lfoPhase) ** 3;
 
-      
-          const sample = (brown * 0.4 + pink * 0.5 + white * 0.3) * 0.5 * lfo;
-      
-          // Simple stereo panning: slow sinusoidal left/right
-          const pan = Math.sin(2 * Math.PI * state.lfoPhase * 0.5) * 0.5 + 0.5; // 0 = left, 1 = right
-          outputL[i] = sample * (1 - pan);
-          outputR[i] = sample * pan;
-      
-          // Smoothing for organic feel
+          // white
+          const white = (Math.random() * 2 - 1) * trebleGain;
+
+          // advance LFO phase
+          state.lfoPhase += phaseInc;
+
+          // raw LFO in [-1..1]
+          const raw = Math.sin(state.lfoPhase);
+          // shaped LFO
+          const shaped = shapeLFO(raw, localLfoShape);
+
+          // micro-randomness (very small jitter in amplitude & pan)
+          const jitter = (Math.random() - 0.5) * 2 * localRand; // -rand..+rand
+
+          // final LFO value used for amplitude modulation (breathing) and pan center
+          // amplitude modulation between ~(1 - depth*0.4) and ~(1 + depth*0.4)
+          const ampLfo = 1 + (shaped * 0.15) + jitter * 0.05;
+
+          // panning value: center ± depth. Convert shaped [-1..1] to pan [0..1]
+          const panNormalized = (shaped * 0.5 * localLfoDepth) + 0.5 + jitter * 0.01; // 0=left,1=right
+          const pan = Math.max(0, Math.min(1, panNormalized)); // clamp
+
+          // base sample
+          const sample = (brown * 0.4 + pink * 0.5 + white * 0.3) * 0.5 * ampLfo;
+
+          // simple equal-power-ish pan:
+          // leftGain = cos(pan * PI/2), rightGain = sin(pan * PI/2)
+          const leftGain = Math.cos(pan * Math.PI * 0.5);
+          const rightGain = Math.sin(pan * Math.PI * 0.5);
+
+          outputL[i] = sample * leftGain;
+          outputR[i] = sample * rightGain;
+
+          // smoothing (very mild) to reduce per-sample micro-stepping
           if (i > 0) {
-            outputL[i] = outputL[i] * 0.8 + outputL[i - 1] * 0.2;
-            outputR[i] = outputR[i] * 0.8 + outputR[i - 1] * 0.2;
+            outputL[i] = outputL[i] * 0.85 + outputL[i - 1] * 0.15;
+            outputR[i] = outputR[i] * 0.85 + outputR[i - 1] * 0.15;
           }
         }
       }
@@ -152,33 +224,30 @@ export default function RGBNoiseMixer() {
 
     scriptNode.connect(gainNode);
     gainNode.connect(audioContext.destination);
-    
+
     noiseNodeRef.current = scriptNode;
     setIsPlaying(true);
   };
 
   const stopRealTimeNoise = () => {
     if (noiseNodeRef.current) {
-      noiseNodeRef.current.disconnect();
+      try { noiseNodeRef.current.disconnect(); } catch(e) {}
       noiseNodeRef.current = null;
     }
     if (gainNodeRef.current) {
-      gainNodeRef.current.disconnect();
+      try { gainNodeRef.current.disconnect(); } catch(e) {}
       gainNodeRef.current = null;
     }
     if (audioContextRef.current) {
-      audioContextRef.current.close();
+      try { audioContextRef.current.close(); } catch(e) {}
       audioContextRef.current = null;
     }
     setIsPlaying(false);
   };
 
   const togglePlayback = () => {
-    if (isPlaying) {
-      stopRealTimeNoise();
-    } else {
-      startRealTimeNoise();
-    }
+    if (isPlaying) stopRealTimeNoise();
+    else startRealTimeNoise();
   };
 
   // Cleanup on unmount
@@ -186,44 +255,49 @@ export default function RGBNoiseMixer() {
     return () => {
       stopRealTimeNoise();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // --- Recording generation (respects organic settings from state) ---
   const generateRecording = () => {
     const sampleRate = 44100;
     const length = sampleRate * duration;
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const audioBuffer = audioContext.createBuffer(2, length, sampleRate);
-    
+
     const bassGain = red / 255;
     const midGain = green / 255;
     const trebleGain = blue / 255;
-    
+
     const leftChannel = audioBuffer.getChannelData(0);
     const rightChannel = audioBuffer.getChannelData(1);
-    
-    if (!isOrganicRef.current) {
+
+    if (!isOrganic) {
       let brownState = 0;
       let pinkState = { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 };
-      
+
       for (let i = 0; i < length; i++) {
         const white1 = Math.random() * 2 - 1;
         brownState = (brownState + (0.02 * white1)) / 1.02;
         const brown = brownState * 3.5;
-        
+
         const pink = generatePinkNoiseSample(pinkState);
         const white = Math.random() * 2 - 1;
-        
+
         const sample = (brown * bassGain * 0.4 + pink * midGain * 0.5 + white * trebleGain * 0.3) * 0.5;
         leftChannel[i] = sample;
         rightChannel[i] = sample;
       }
     } else {
+      // For recording, use the same organic algorithm but based on state variables (not refs)
       const brownStates = [0, 0, 0];
       const pinkStates = [
         { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 },
         { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 }
       ];
-      
+      let lfoPhaseRec = phaseOffset * Math.PI * 2;
+      const phaseIncRec = (2 * Math.PI * lfoRate) / sampleRate;
+
       for (let i = 0; i < length; i++) {
         const brown1 = generateBrownNoiseSample(brownStates[0]);
         brownStates[0] = brown1 / 3.5;
@@ -231,39 +305,48 @@ export default function RGBNoiseMixer() {
         brownStates[1] = brown2 / 3.5;
         const brown3 = generateBrownNoiseSample(brownStates[2]);
         brownStates[2] = brown3 / 3.5;
-        
         const brown = (brown1 * 0.4 + brown2 * 0.35 + brown3 * 0.25) * bassGain;
-        
+
         const pink1 = generatePinkNoiseSample(pinkStates[0]);
         const pink2 = generatePinkNoiseSample(pinkStates[1]);
         const pink = (pink1 * 0.6 + pink2 * 0.4) * midGain;
-        
+
         const white = (Math.random() * 2 - 1) * trebleGain;
-        
-        const lfo = Math.sin(2 * Math.PI * 2.5 * i / length) * 0.15 + 1;
-        const sample = (brown * 0.4 + pink * 0.5 + white * 0.3) * 0.5 * lfo;
-        
-        leftChannel[i] = sample;
-        rightChannel[i] = sample;
+
+        lfoPhaseRec += phaseIncRec;
+        const raw = Math.sin(lfoPhaseRec);
+        const shaped = shapeLFO(raw, lfoShape);
+        const jitter = (Math.random() - 0.5) * 2 * randomness;
+        const ampLfo = 1 + (shaped * 0.15) + jitter * 0.05;
+        const panNormalized = (shaped * 0.5 * lfoDepth) + 0.5 + jitter * 0.01;
+        const pan = Math.max(0, Math.min(1, panNormalized));
+
+        const sample = (brown * 0.4 + pink * 0.5 + white * 0.3) * 0.5 * ampLfo;
+        const leftGain = Math.cos(pan * Math.PI * 0.5);
+        const rightGain = Math.sin(pan * Math.PI * 0.5);
+
+        leftChannel[i] = sample * leftGain;
+        rightChannel[i] = sample * rightGain;
       }
     }
-    
+
     return audioBuffer;
   };
 
+  // WAV to download (same as your implementation)
   const handleDownload = () => {
     const audioBuffer = generateRecording();
     const channels = [audioBuffer.getChannelData(0), audioBuffer.getChannelData(1)];
     const length = audioBuffer.length * channels.length * 2;
     const buffer = new ArrayBuffer(44 + length);
     const view = new DataView(buffer);
-    
+
     const writeString = (offset, string) => {
       for (let i = 0; i < string.length; i++) {
         view.setUint8(offset + i, string.charCodeAt(i));
       }
     };
-    
+
     writeString(0, 'RIFF');
     view.setUint32(4, 36 + length, true);
     writeString(8, 'WAVE');
@@ -277,7 +360,7 @@ export default function RGBNoiseMixer() {
     view.setUint16(34, 16, true);
     writeString(36, 'data');
     view.setUint32(40, length, true);
-    
+
     let offset = 44;
     for (let i = 0; i < audioBuffer.length; i++) {
       for (let channel = 0; channel < 2; channel++) {
@@ -286,7 +369,7 @@ export default function RGBNoiseMixer() {
         offset += 2;
       }
     }
-    
+
     const blob = new Blob([buffer], { type: 'audio/wav' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -296,29 +379,42 @@ export default function RGBNoiseMixer() {
     URL.revokeObjectURL(url);
   };
 
+  // --- Presets and toggles ---
   const setPreset = (r, g, b) => {
-    setRed(r);
-    setGreen(g);
-    setBlue(b);
+    setRed(r); redRef.current = r;
+    setGreen(g); greenRef.current = g;
+    setBlue(b); blueRef.current = b;
   };
 
   const toggleOrganic = () => {
     setIsOrganic(prev => {
-      isOrganicRef.current = !prev; // <-- update ref
+      isOrganicRef.current = !prev;
       return !prev;
     });
   };
 
+  // --- Live-ref updates for controls so audio thread sees changes immediately ---
+  useEffect(() => { redRef.current = red; }, [red]);
+  useEffect(() => { greenRef.current = green; }, [green]);
+  useEffect(() => { blueRef.current = blue; }, [blue]);
+  useEffect(() => { isOrganicRef.current = isOrganic; }, [isOrganic]);
 
+  useEffect(() => { lfoRateRef.current = lfoRate; }, [lfoRate]);
+  useEffect(() => { lfoDepthRef.current = lfoDepth; }, [lfoDepth]);
+  useEffect(() => { lfoShapeRef.current = lfoShape; }, [lfoShape]);
+  useEffect(() => { randomnessRef.current = randomness; }, [randomness]);
+  useEffect(() => { phaseOffsetRef.current = phaseOffset; }, [phaseOffset]);
+
+  // --- UI ---
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 p-8 flex items-center justify-center">
       <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-2xl w-full border border-gray-700">
         <h1 className="text-3xl font-bold text-white mb-2">RGB Noise Frequency Mixer</h1>
         <p className="text-gray-400 mb-6">Real-time noise synthesis • Adjust while playing</p>
-        
+
         {/* Color Display */}
         <div className="mb-6 relative">
-          <div 
+          <div
             className="w-full h-32 rounded-lg shadow-lg transition-colors duration-300"
             style={{ backgroundColor: rgbToHex(red, green, blue) }}
           />
@@ -372,8 +468,7 @@ export default function RGBNoiseMixer() {
               value={red}
               onChange={(e) => {
                 const val = parseInt(e.target.value);
-                setRed(val);
-                redRef.current = val; // <-- update ref
+                setRed(val); redRef.current = val;
               }}
               className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-red-500"
             />
@@ -389,12 +484,10 @@ export default function RGBNoiseMixer() {
               min="0"
               max="255"
               value={green}
-              onChange={(e) => 
-                { 
-                  const val = parseInt(e.target.value)
-                  setGreen(val);
-                  greenRef.current = val;
-                }}
+              onChange={(e) => {
+                const val = parseInt(e.target.value);
+                setGreen(val); greenRef.current = val;
+              }}
               className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500"
             />
           </div>
@@ -409,11 +502,10 @@ export default function RGBNoiseMixer() {
               min="0"
               max="255"
               value={blue}
-              onChange={(e) => { 
-                  const val = parseInt(e.target.value)
-                  setBlue(val);
-                  blueRef.current = val;
-                }}
+              onChange={(e) => {
+                const val = parseInt(e.target.value);
+                setBlue(val); blueRef.current = val;
+              }}
               className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
             />
           </div>
@@ -455,7 +547,7 @@ export default function RGBNoiseMixer() {
           <div className="flex items-center justify-between mb-2">
             <div>
               <label className="text-sm font-medium text-white">
-                {isOrganic ? '🌿 "Organic" Mode' : '🔬 Pure Mode'}
+                {isOrganic ? '🌿 Organic Mode' : '🔬 Pure Mode'}
               </label>
               <p className="text-xs text-gray-400 mt-1">
                 {isOrganic 
@@ -476,6 +568,100 @@ export default function RGBNoiseMixer() {
               />
             </button>
           </div>
+
+          {/* Organic controls (only visible in Organic Mode) */}
+          {isOrganic && (
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="text-xs text-gray-400">LFO Rate (Hz) • {lfoRate.toFixed(3)}</label>
+                <input
+                  type="range"
+                  min="0.02"
+                  max="0.5"
+                  step="0.005"
+                  value={lfoRate}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    setLfoRate(v); lfoRateRef.current = v;
+                  }}
+                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer mb-1"
+                />
+                <p className="text-xs text-gray-500">Lower = slower breathing (e.g. 0.125 = 8s cycle)</p>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-400">LFO Depth (Pan) • {lfoDepth.toFixed(2)}</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={lfoDepth}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    setLfoDepth(v); lfoDepthRef.current = v;
+                  }}
+                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer mb-1"
+                />
+                <p className="text-xs text-gray-500">How wide pan swings are (0=center, 1=full sweep)</p>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-400">Shape • {lfoShape}</label>
+                <select
+                  value={lfoShape}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setLfoShape(v); lfoShapeRef.current = v;
+                  }}
+                  className="w-full bg-gray-700 text-white py-2 px-2 rounded-lg text-sm"
+                >
+                  <option value="sine">Sine (smooth)</option>
+                  <option value="triangle">Triangle (linear)</option>
+                  <option value="smoothstep">Smoothstep (natural)</option>
+                  <option value="noiseBlend">Noise Blend (humanized)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-400">Randomness • {randomness.toFixed(3)}</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="0.2"
+                  step="0.005"
+                  value={randomness}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    setRandomness(v); randomnessRef.current = v;
+                  }}
+                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer mb-1"
+                />
+                <p className="text-xs text-gray-500">Micro-variations to make movement feel alive</p>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-400">Phase Offset • {phaseOffset.toFixed(2)}</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={phaseOffset}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    setPhaseOffset(v); phaseOffsetRef.current = v;
+                    // update live LFO phase if running
+                    if (organicStateRef.current) {
+                      organicStateRef.current.lfoPhase = v * Math.PI * 2;
+                    }
+                  }}
+                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer mb-1"
+                />
+                <p className="text-xs text-gray-500">Start position of the pan (0 = center, 0.25 = left, 0.75 = right)</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Download Section */}
@@ -503,7 +689,7 @@ export default function RGBNoiseMixer() {
         {/* Info */}
         <div className="mt-6 p-4 bg-gray-900 rounded-lg border border-gray-700">
           <p className="text-sm text-gray-300 mb-2">
-            <strong className="text-white">Real-time synthesis:</strong> Hit play and adjust the RGB sliders to hear instant changes!
+            <strong className="text-white">Real-time synthesis:</strong> Hit play and adjust the RGB sliders or Organic controls to hear changes immediately.
           </p>
           <ul className="text-xs text-gray-400 space-y-1">
             <li><span className="text-red-400">Red</span> = Bass frequencies (deep rumble)</li>
