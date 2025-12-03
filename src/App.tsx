@@ -82,7 +82,7 @@ export default function RGBNoiseMixer() {
       const midGain = greenRef.current / 255;
       const trebleGain = blueRef.current / 255;
             
-      if (!isOrganicRef) {
+      if (!isOrganicRef.current) {
         // PURE MODE - Simple generation
         let brownState = 0;
         let pinkState = { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 };
@@ -199,7 +199,7 @@ export default function RGBNoiseMixer() {
     const leftChannel = audioBuffer.getChannelData(0);
     const rightChannel = audioBuffer.getChannelData(1);
     
-    if (!isOrganicRef) {
+    if (!isOrganicRef.current) {
       let brownState = 0;
       let pinkState = { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 };
       
@@ -289,7 +289,7 @@ export default function RGBNoiseMixer() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `custom-noise-rgb(${red},${green},${blue})-${isOrganicRef ? 'organic' : 'pure'}.wav`;
+    a.download = `custom-noise-rgb(${red},${green},${blue})-${isOrganic ? 'organic' : 'pure'}.wav`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -445,10 +445,10 @@ export default function RGBNoiseMixer() {
           <div className="flex items-center justify-between mb-2">
             <div>
               <label className="text-sm font-medium text-white">
-                {isOrganicRef ? '🌿 Organic Mode' : '🔬 Pure Mode'}
+                {isOrganic ? '🌿 Organic Mode' : '🔬 Pure Mode'}
               </label>
               <p className="text-xs text-gray-400 mt-1">
-                {isOrganicRef 
+                {isOrganic 
                   ? 'Multi-layered with subtle movement and spatial depth' 
                   : 'Raw mathematical algorithms, perfectly static'}
               </p>
@@ -456,12 +456,12 @@ export default function RGBNoiseMixer() {
             <button
               onClick={() => setIsOrganic(!isOrganic)}
               className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
-                isOrganicRef ? 'bg-green-600' : 'bg-gray-600'
+                isOrganic ? 'bg-green-600' : 'bg-gray-600'
               }`}
             >
               <span
                 className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
-                  isOrganicRef ? 'translate-x-7' : 'translate-x-1'
+                  isOrganic ? 'translate-x-7' : 'translate-x-1'
                 }`}
               />
             </button>
