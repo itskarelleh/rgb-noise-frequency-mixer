@@ -135,8 +135,8 @@ export default function RGBNoiseMixer() {
       
           // Smoothing for organic feel
           if (i > 0) {
-            outputL[i] = outputL[i] * 0.8 + outputL[i - 1] * 0.2;
-            outputR[i] = outputR[i] * 0.8 + outputR[i - 1] * 0.2;
+            outputL[i] = outputL[i] * 0.8 + outputL[i - 1] * 0.5;
+            outputR[i] = outputR[i] * 0.8 + outputR[i - 1] * 0.5;
           }
         }
       }
