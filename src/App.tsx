@@ -454,7 +454,7 @@ export default function RGBNoiseMixer() {
               </p>
             </div>
             <button
-              onClick={() => setIsOrganic(!isOrganicRef)}
+              onClick={() => setIsOrganic(!isOrganic)}
               className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
                 isOrganicRef ? 'bg-green-600' : 'bg-gray-600'
               }`}
