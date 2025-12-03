@@ -126,8 +126,9 @@ export default function RGBNoiseMixer() {
       
           // LFO for organic movement
           state.lfoPhase += 0.00005;
-          const lfoFrequency = 1 / 8
-         const lfo = Math.sin(2 * Math.PI * lfoFrequency * time) ** 3;
+          const lfoFrequency = 1 / 8;
+          const lfo = Math.sin(2 * Math.PI * lfoFrequency * state.lfoPhase) ** 3;
+
 
       
           const sample = (brown * 0.4 + pink * 0.5 + white * 0.3) * 0.5 * lfo;
