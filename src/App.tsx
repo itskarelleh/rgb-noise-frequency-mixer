@@ -445,7 +445,7 @@ export default function RGBNoiseMixer() {
           <div className="flex items-center justify-between mb-2">
             <div>
               <label className="text-sm font-medium text-white">
-                {isOrganic ? '🌿 Organic Mode' : '🔬 Pure Mode'}
+                {isOrganic ? '🌿 "Organic Mode"' : '🔬 Pure Mode'}
               </label>
               <p className="text-xs text-gray-400 mt-1">
                 {isOrganic 
