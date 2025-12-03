@@ -300,6 +300,14 @@ export default function RGBNoiseMixer() {
     setBlue(b);
   };
 
+  const toggleOrganic = () => {
+    setIsOrganic(prev => {
+      isOrganicRef.current = !prev; // <-- update ref
+      return !prev;
+    });
+  };
+
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 p-8 flex items-center justify-center">
       <div className="bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-2xl w-full border border-gray-700">
@@ -454,7 +462,7 @@ export default function RGBNoiseMixer() {
               </p>
             </div>
             <button
-              onClick={() => setIsOrganic(!isOrganic)}
+              onClick={toggleOrganic}
               className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
                 isOrganic ? 'bg-green-600' : 'bg-gray-600'
               }`}
