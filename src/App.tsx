@@ -12,6 +12,8 @@ export default function RGBNoiseMixer() {
   const redRef = useRef(red);
   const greenRef = useRef(green);
   const blueRef = useRef(blue);
+  const isOrganicRef = useRef(isOrganic);
+
   const audioContextRef = useRef(null);
   const noiseNodeRef = useRef(null);
   const gainNodeRef = useRef(null);
@@ -80,7 +82,7 @@ export default function RGBNoiseMixer() {
       const midGain = greenRef.current / 255;
       const trebleGain = blueRef.current / 255;
             
-      if (!isOrganic) {
+      if (!isOrganicRef) {
         // PURE MODE - Simple generation
         let brownState = 0;
         let pinkState = { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 };
@@ -135,8 +137,8 @@ export default function RGBNoiseMixer() {
       
           // Smoothing for organic feel
           if (i > 0) {
-            outputL[i] = outputL[i] * 0.8 + outputL[i - 1] * 0.5;
-            outputR[i] = outputR[i] * 0.8 + outputR[i - 1] * 0.5;
+            outputL[i] = outputL[i] * 0.8 + outputL[i - 1] * 0.2;
+            outputR[i] = outputR[i] * 0.8 + outputR[i - 1] * 0.2;
           }
         }
       }
@@ -197,7 +199,7 @@ export default function RGBNoiseMixer() {
     const leftChannel = audioBuffer.getChannelData(0);
     const rightChannel = audioBuffer.getChannelData(1);
     
-    if (!isOrganic) {
+    if (!isOrganicRef) {
       let brownState = 0;
       let pinkState = { b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 };
       
@@ -287,7 +289,7 @@ export default function RGBNoiseMixer() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `custom-noise-rgb(${red},${green},${blue})-${isOrganic ? 'organic' : 'pure'}.wav`;
+    a.download = `custom-noise-rgb(${red},${green},${blue})-${isOrganicRef ? 'organic' : 'pure'}.wav`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -443,23 +445,23 @@ export default function RGBNoiseMixer() {
           <div className="flex items-center justify-between mb-2">
             <div>
               <label className="text-sm font-medium text-white">
-                {isOrganic ? '🌿 Organic Mode' : '🔬 Pure Mode'}
+                {isOrganicRef ? '🌿 Organic Mode' : '🔬 Pure Mode'}
               </label>
               <p className="text-xs text-gray-400 mt-1">
-                {isOrganic 
+                {isOrganicRef 
                   ? 'Multi-layered with subtle movement and spatial depth' 
                   : 'Raw mathematical algorithms, perfectly static'}
               </p>
             </div>
             <button
-              onClick={() => setIsOrganic(!isOrganic)}
+              onClick={() => setIsOrganic(!isOrganicRef)}
               className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
-                isOrganic ? 'bg-green-600' : 'bg-gray-600'
+                isOrganicRef ? 'bg-green-600' : 'bg-gray-600'
               }`}
             >
               <span
                 className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
-                  isOrganic ? 'translate-x-7' : 'translate-x-1'
+                  isOrganicRef ? 'translate-x-7' : 'translate-x-1'
                 }`}
               />
             </button>
