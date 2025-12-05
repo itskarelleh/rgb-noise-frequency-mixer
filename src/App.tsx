@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Volume2, VolumeX, Download, Plus, Trash2 } from 'lucide-react';
-import { SavePresetButton } from './components/presets/save-preset-button'
+import { SavePresetButton } from './components/presets'
 import type {Preset} from './types'
 
 export default function RGBNoiseMixer() {
