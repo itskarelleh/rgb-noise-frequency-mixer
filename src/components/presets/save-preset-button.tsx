@@ -1,4 +1,4 @@
-export function SavePresetButton() {
+export default function SavePresetButton() {
 
   return (
     <button
