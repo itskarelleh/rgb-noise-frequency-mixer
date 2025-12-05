@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { usePresets } from '../../hooks/use-presets'
 
 export default function SavePresetButton() {
