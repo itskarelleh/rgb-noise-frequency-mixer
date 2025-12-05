@@ -1,7 +1,9 @@
 import type { Preset } from '../../types'
+import { usePresets } from '../../hooks/use-presets';
 
 export default function LoadPresetButton({ preset } : { preset: Preset}) {
 
+  const { loadPreset } = usePresets();
   return (
     <button
                   onClick={() => loadPreset(preset)}
