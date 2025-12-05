@@ -32,7 +32,7 @@ export default function RGBNoiseMixer() {
   const [phaseOffset, setPhaseOffset] = useState(0); // 0..1 (0..360deg)
 
   // --- Custom presets ---
-  const [presets, setPresets] = useState<Preset[]>([]);
+  const [presets, setPresets] = useLocalStorage<Preset[]>([]);
   const [hoveredPresetId, setHoveredPresetId] = useState<string | null>(null);
 
   // --- Refs for live audio access (so changes apply instantly) ---
