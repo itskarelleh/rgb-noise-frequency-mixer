@@ -1,19 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Volume2, VolumeX, Download, Plus, Trash2 } from 'lucide-react';
 import { SavePresetButton } from './components/presets/save-preset-button'
-interface Preset {
-  id: string;
-  name: string;
-  red: number;
-  green: number;
-  blue: number;
-  isOrganic: boolean;
-  lfoRate: number;
-  lfoDepth: number;
-  lfoShape: string;
-  randomness: number;
-  phaseOffset: number;
-}
+import type {Preset} from './types'
 
 export default function RGBNoiseMixer() {
   // --- Core states (visible UI) ---
