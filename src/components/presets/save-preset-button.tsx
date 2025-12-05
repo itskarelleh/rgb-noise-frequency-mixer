@@ -3,6 +3,7 @@ import { usePresets } from '../../hooks/use-presets'
 
 export default function SavePresetButton() {
 
+  const { savePresets } = usePresets()
   return (
     <button
       onClick={savePreset}
