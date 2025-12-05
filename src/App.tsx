@@ -1,7 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Volume2, VolumeX, Download, Plus, Trash2 } from 'lucide-react';
-import { SavePresetButton, DeletePresetButton, LoadPresetButton } from './components/presets'
-import type {Preset} from './types'
+
+interface Preset {
+  id: string;
+  name: string;
+  red: number;
+  green: number;
+  blue: number;
+  isOrganic: boolean;
+  lfoRate: number;
+  lfoDepth: number;
+  lfoShape: string;
+  randomness: number;
+  phaseOffset: number;
+}
 
 export default function RGBNoiseMixer() {
   // --- Core states (visible UI) ---
@@ -20,7 +32,7 @@ export default function RGBNoiseMixer() {
   const [phaseOffset, setPhaseOffset] = useState(0); // 0..1 (0..360deg)
 
   // --- Custom presets ---
-  const [presets, setPresets] = useLocalStorage<Preset[]>([]);
+  const [presets, setPresets] = useState<Preset[]>([]);
   const [hoveredPresetId, setHoveredPresetId] = useState<string | null>(null);
 
   // --- Refs for live audio access (so changes apply instantly) ---
