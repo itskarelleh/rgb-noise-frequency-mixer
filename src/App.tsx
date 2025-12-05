@@ -1,5 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Volume2, VolumeX, Download } from 'lucide-react';
+import { Volume2, VolumeX, Download, Plus, Trash2 } from 'lucide-react';
+
+interface Preset {
+  id: string;
+  name: string;
+  red: number;
+  green: number;
+  blue: number;
+  isOrganic: boolean;
+  lfoRate: number;
+  lfoDepth: number;
+  lfoShape: string;
+  randomness: number;
+  phaseOffset: number;
+}
 
 export default function RGBNoiseMixer() {
   // --- Core states (visible UI) ---
@@ -16,6 +30,10 @@ export default function RGBNoiseMixer() {
   const [lfoShape, setLfoShape] = useState('sine'); // 'sine' | 'triangle' | 'smoothstep' | 'noiseBlend'
   const [randomness, setRandomness] = useState(0.03); // 0..0.2
   const [phaseOffset, setPhaseOffset] = useState(0); // 0..1 (0..360deg)
+
+  // --- Custom presets ---
+  const [presets, setPresets] = useState<Preset[]>([]);
+  const [hoveredPresetId, setHoveredPresetId] = useState<string | null>(null);
 
   // --- Refs for live audio access (so changes apply instantly) ---
   const redRef = useRef(red);
@@ -393,6 +411,65 @@ export default function RGBNoiseMixer() {
     });
   };
 
+  const savePreset = () => {
+    const id = Date.now().toString();
+    const noiseType = isOrganic ? lfoShape : 'pure';
+    const newPreset: Preset = {
+      id,
+      name: `${getNoiseDescription()} (${noiseType})`,
+      red,
+      green,
+      blue,
+      isOrganic,
+      lfoRate,
+      lfoDepth,
+      lfoShape,
+      randomness,
+      phaseOffset
+    };
+
+    const updatedPresets = [...presets, newPreset];
+    setPresets(updatedPresets);
+    localStorage.setItem('rgbNoisePresets', JSON.stringify(updatedPresets));
+  };
+
+  const loadPreset = (preset: Preset) => {
+    setRed(preset.red);
+    setGreen(preset.green);
+    setBlue(preset.blue);
+    setIsOrganic(preset.isOrganic);
+    setLfoRate(preset.lfoRate);
+    setLfoDepth(preset.lfoDepth);
+    setLfoShape(preset.lfoShape);
+    setRandomness(preset.randomness);
+    setPhaseOffset(preset.phaseOffset);
+
+    redRef.current = preset.red;
+    greenRef.current = preset.green;
+    blueRef.current = preset.blue;
+    isOrganicRef.current = preset.isOrganic;
+    lfoRateRef.current = preset.lfoRate;
+    lfoDepthRef.current = preset.lfoDepth;
+    lfoShapeRef.current = preset.lfoShape;
+    randomnessRef.current = preset.randomness;
+    phaseOffsetRef.current = preset.phaseOffset;
+  };
+
+  const deletePreset = (id: string) => {
+    const updatedPresets = presets.filter(p => p.id !== id);
+    setPresets(updatedPresets);
+    localStorage.setItem('rgbNoisePresets', JSON.stringify(updatedPresets));
+  };
+
+  useEffect(() => {
+    const saved = localStorage.getItem('rgbNoisePresets');
+    if (saved) {
+      try {
+        setPresets(JSON.parse(saved));
+      } catch (e) {}
+    }
+  }, []);
+
   // --- Live-ref updates for controls so audio thread sees changes immediately ---
   useEffect(() => { redRef.current = red; }, [red]);
   useEffect(() => { greenRef.current = green; }, [green]);
@@ -538,6 +615,43 @@ export default function RGBNoiseMixer() {
               className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-3 rounded-lg text-sm font-medium transition-colors"
             >
               Blue
+            </button>
+          </div>
+        </div>
+
+        {/* Custom Presets */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-400 mb-3">Custom Presets</label>
+          <div className="flex flex-wrap gap-2">
+            {presets.map((preset) => (
+              <div
+                key={preset.id}
+                className="relative group"
+                onMouseEnter={() => setHoveredPresetId(preset.id)}
+                onMouseLeave={() => setHoveredPresetId(null)}
+              >
+                <button
+                  onClick={() => loadPreset(preset)}
+                  className="w-12 h-12 rounded-lg shadow-lg border-2 border-gray-600 hover:border-white transition-colors"
+                  style={{ backgroundColor: rgbToHex(preset.red, preset.green, preset.blue) }}
+                  title={preset.name}
+                />
+                {hoveredPresetId === preset.id && (
+                  <button
+                    onClick={() => deletePreset(preset.id)}
+                    className="absolute top-0 right-0 transform translate-x-1 -translate-y-1 bg-red-600 hover:bg-red-700 text-white p-1 rounded-full transition-colors"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              onClick={savePreset}
+              className="w-12 h-12 rounded-lg border-2 border-dashed border-green-500 hover:border-green-400 bg-green-600 bg-opacity-10 hover:bg-opacity-20 transition-all flex items-center justify-center"
+              title="Add new preset"
+            >
+              <Plus size={20} className="text-green-400" />
             </button>
           </div>
         </div>
