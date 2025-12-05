@@ -1,6 +1,7 @@
 import { usePresets } from '../../hooks/use-presets'
 import { Trash2 } 
-export function DeletePresetButton({ id } : { id: string }) {
+  
+export default function DeletePresetButton({ id } : { id: string }) {
 
   return (
       <button
