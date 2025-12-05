@@ -1,8 +1,11 @@
 import { usePresets } from '../../hooks/use-presets'
-import { Trash2 } 
+import { Trash2 } from 'lucide-react';
+
   
 export default function DeletePresetButton({ id } : { id: string }) {
 
+  const { deletePreset } = usePresets()
+  
   return (
       <button
         onClick={() => deletePreset(id)}
